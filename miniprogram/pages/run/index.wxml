@@ -1,0 +1,13 @@
+<view class="page">
+  <view class="title">{{report ? '跑步结果' : running ? '正在跑步' : '开始跑步'}}</view>
+  <view class="error" wx:if="{{error}}">{{error}}</view>
+  <view wx:if="{{report}}" class="card report"><view class="section-title">领地已结算</view><view class="big-number">{{report.displayDistance}}<text> km</text></view><view class="subtitle">{{report.displayDuration}} · 本次伤害 {{report.damage}}</view><view class="report-grid"><view><text>{{report.claimed}}</text>新占</view><view><text>{{report.fortified}}</text>加固</view><view><text>{{report.weakened}}</text>削弱</view></view><view class="notice" wx:if="{{report.neutralized}}">削弱的格子中，{{report.neutralized}} 格变为中立，需另一次闭环占领。</view><view class="notice" wx:if="{{report.alreadyCounted}}">{{report.alreadyCounted}} 格今天已经生效，没有重复结算。</view><button class="primary" bindtap="goHome">返回地图</button></view>
+  <block wx:else>
+    <view class="notice" wx:if="{{recovered}}">已恢复未结束活动。小程序被系统终止期间的轨迹无法补录；若采样中断较长，请放弃并重新开始。</view>
+    <view class="card"><view class="run-stats"><view><text>{{distance}}</text>公里</view><view><text>{{elapsed}}</text>运动时间</view></view><view class="subtitle" wx:if="{{running}}">{{pointCount}} 个定位点 · 距起点 {{closure}} 米</view><view class="subtitle" wx:else>至少 600 米、3 分钟，回到起点 80 米范围内，并围住至少 4 格。</view></view>
+    <map latitude="{{center.latitude}}" longitude="{{center.longitude}}" scale="16" polyline="{{polyline}}" style="width:100%;height:620rpx;border-radius:20rpx"></map>
+    <view wx:if="{{!running}}"><view class="share-row"><view><view class="section-title">公开大致位置</view><view class="subtitle">只在本次跑步中显示约 80 米区域。</view></view><switch color="#accb62" checked="{{share}}" bindchange="shareChange"/></view><button class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="start">授权定位并开始跑步</button><view class="notice">定位用于记录实际闭环。微信后台定位权限尚未开通时无法开始；关闭公开位置不影响领地结算。</view></view>
+    <view wx:else class="run-actions"><button class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="finish">结束并结算</button><button class="secondary" disabled="{{busy}}" bindtap="cancel">放弃本次</button></view>
+  </block>
+</view>
+<view class="privacy" wx:if="{{privacyRequired}}"><view class="privacy-inner"><view class="title">定位用途说明</view><view class="subtitle">需要持续定位形成闭环。公开大致位置由你单独选择，原始轨迹仅本人可见。</view><button id="privacyAgree" class="primary" open-type="agreePrivacyAuthorization" bindagreeprivacyauthorization="agreePrivacy">同意并继续</button><button bindtap="rejectPrivacy">暂不同意</button></view></view>

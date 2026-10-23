@@ -1,0 +1,8 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+group = 'expo.modules.looprun'
+version = '0.1.0'
+android { namespace 'expo.modules.looprun' }
+dependencies { implementation 'androidx.work:work-runtime-ktx:2.11.2' }

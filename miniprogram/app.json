@@ -1,0 +1,10 @@
+{
+  "pages": ["pages/home/index", "pages/run/index", "pages/history/index"],
+  "window": { "navigationBarTitleText": "圈界 LoopRun", "navigationBarBackgroundColor": "#f8faf3", "navigationBarTextStyle": "black", "backgroundColor": "#f4f6ee" },
+  "requiredBackgroundModes": ["location"],
+  "requiredPrivateInfos": ["getLocation", "onLocationChange", "startLocationUpdateBackground"],
+  "permission": { "scope.userLocation": { "desc": "记录本次跑步轨迹，用于闭环占领与领地结算" }, "scope.userLocationBackground": { "desc": "在锁屏或离开小程序时继续记录你主动开始的跑步" } },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}
