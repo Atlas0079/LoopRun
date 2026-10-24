@@ -45,6 +45,7 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
   private val onRegionChange by EventDispatcher()
   private val onCellPress by EventDispatcher()
   private val onMapStatus by EventDispatcher()
+  private val onRunnerPress by EventDispatcher()
   private val handler = Handler(Looper.getMainLooper())
   private var mapView: MapView? = null
   private var map: AMap? = null
@@ -99,10 +100,13 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
           override fun onCameraChange(camera: CameraPosition?) = Unit
           override fun onCameraChangeFinish(camera: CameraPosition?) { emitBounds() }
         })
+        sdk.setOnMarkerClickListener { marker ->
+          runners.entries.firstOrNull { it.value.id == marker.id }?.let { onRunnerPress(mapOf("id" to it.key)) }
+          true
+        }
         sdk.setOnMapClickListener { point ->
-          polygons.asReversed().firstOrNull { it.contains(point) }?.let { polygon ->
-            cellKeys[polygon.id]?.let { onCellPress(mapOf("key" to it)) }
-          }
+          val polygon = polygons.asReversed().firstOrNull { it.contains(point) }
+          onCellPress(mapOf("key" to (polygon?.let { cellKeys[it.id] } ?: "")))
         }
         views.add(this)
       } catch (error: Exception) {
@@ -188,21 +192,27 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
       val id = runner.getString("id"); val name = runner.getString("name"); val color = runner.getString("color")
       val point = display(LatLng(runner.getDouble("lat"), runner.getDouble("lng")))
       visible.add(id)
-      if (runnerLabels[id] != name + color) {
+      val selected = scene.optString("selectedRunner") == id
+      val signature = name + color + selected
+      if (runnerLabels[id] != signature) {
         runners.remove(id)?.remove()
         val density = resources.displayMetrics.density
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 11 * density; textAlign = Paint.Align.CENTER }
-        val w = (paint.measureText(name) + 16 * density).toInt().coerceAtLeast((28 * density).toInt())
-        val bitmap = Bitmap.createBitmap(w, (44 * density).toInt(), Bitmap.Config.ARGB_8888)
+        val w = if (selected) (paint.measureText(name) + 20 * density).toInt().coerceAtLeast((32 * density).toInt()) else (32 * density).toInt()
+        val labelHeight = if (selected) 26 * density else 0f
+        val bitmap = Bitmap.createBitmap(w, (labelHeight + 32 * density).toInt(), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        paint.color = Color.WHITE; canvas.drawRoundRect(0f, 0f, w.toFloat(), 21 * density, 5 * density, 5 * density, paint)
-        paint.color = Color.rgb(33, 61, 48); canvas.drawText(name, w / 2f, 15 * density, paint)
-        paint.color = Color.WHITE; canvas.drawCircle(w / 2f, 33 * density, 10 * density, paint)
-        paint.color = Color.parseColor(color); canvas.drawCircle(w / 2f, 33 * density, 8 * density, paint)
-        paint.color = Color.WHITE; paint.textSize = 10 * density; canvas.drawText("人", w / 2f, 37 * density, paint)
+        if (selected) {
+          paint.color = Color.WHITE; canvas.drawRoundRect(0f, 0f, w.toFloat(), 23 * density, 5 * density, 5 * density, paint)
+          paint.color = Color.rgb(33, 61, 48); canvas.drawText(name, w / 2f, 16 * density, paint)
+        }
+        val cy = labelHeight + 16 * density
+        paint.color = Color.WHITE; canvas.drawCircle(w / 2f, cy, 14 * density, paint)
+        paint.color = Color.parseColor(color); canvas.drawCircle(w / 2f, cy, 11 * density, paint)
+        paint.color = Color.WHITE; paint.textSize = 12 * density; canvas.drawText("人", w / 2f, cy + 4 * density, paint)
         runners[id] = sdk.addMarker(MarkerOptions().position(point).title(name).snippet("共享大致位置 · 约 80 米区域")
-          .icon(BitmapDescriptorFactory.fromBitmap(bitmap)).anchor(.5f, 1f).zIndex(10f))
-        runnerLabels[id] = name + color
+          .icon(BitmapDescriptorFactory.fromBitmap(bitmap)).anchor(.5f, 1f).zIndex(if (selected) 11f else 10f))
+        runnerLabels[id] = signature
       } else runners[id]?.position = point
     }
     for (id in runners.keys.toList()) if (id !in visible) { runners.remove(id)?.remove(); runnerLabels.remove(id) }

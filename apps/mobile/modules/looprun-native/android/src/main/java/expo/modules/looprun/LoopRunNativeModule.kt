@@ -15,7 +15,7 @@ class LoopRunNativeModule : Module() {
     OnActivityEntersBackground { LoopRunMapView.pauseAll() }
     OnActivityDestroys { LoopRunMapView.destroyAll() }
     View(LoopRunMapView::class) {
-      Events("onRegionChange", "onCellPress", "onMapStatus")
+      Events("onRegionChange", "onCellPress", "onMapStatus", "onRunnerPress")
       Prop("scene") { view: LoopRunMapView, scene: String -> view.updateScene(scene) }
       OnViewDestroys { view: LoopRunMapView -> view.dispose() }
     }
