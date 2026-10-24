@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.view.MotionEvent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -82,6 +83,8 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
         sdk.uiSettings.isZoomControlsEnabled = true
         sdk.uiSettings.zoomPosition = AMapOptions.ZOOM_POSITION_RIGHT_BOTTOM
         sdk.uiSettings.isScaleControlsEnabled = true
+        sdk.uiSettings.isScrollGesturesEnabled = true
+        sdk.uiSettings.isZoomGesturesEnabled = true
         sdk.uiSettings.isRotateGesturesEnabled = false
         sdk.uiSettings.isTiltGesturesEnabled = false
         sdk.setMinZoomLevel(12f)
@@ -226,6 +229,18 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
       val bounds = LatLngBounds.builder(); cameraPoints.forEach { bounds.include(it) }
       sdk.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds.build(), width, height, (24 * resources.displayMetrics.density).toInt()))
     }
+  }
+
+  // Keep the native map in control of the full touch stream, including multi-touch.
+  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+      parent?.requestDisallowInterceptTouchEvent(true)
+    }
+    val handled = super.dispatchTouchEvent(event)
+    if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+      parent?.requestDisallowInterceptTouchEvent(false)
+    }
+    return handled
   }
 
   override fun onAttachedToWindow() { super.onAttachedToWindow(); onHostResume() }
