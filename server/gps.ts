@@ -46,8 +46,8 @@ app.setErrorHandler((error:any,_request,reply)=>{
   if(!known)app.log.error({name:error.name,code:error.code},'GPS request failed');
   reply.code(error.statusCode||(known?400:500)).send({error:error.validation?'请求格式不正确，请检查当前内测版本。':known?error.message:'服务暂不可用，请稍后重试。',code:error.validation?'INVALID_REQUEST':error.code});
 });
-app.get('/api/health',async()=>({ok:true,mode:'gps',development,version:'0.4.1'}));
-app.get('/api/config',async()=>({sandbox:false,development,rules:RULES,center:DEFAULT_CENTER,version:'0.4.1',...(development?{routes:roadRoutes.map(({id,name,description,distance,points})=>({id,name,description,distance,points}))}:{})}));
+app.get('/api/health',async()=>({ok:true,mode:'gps',development,version:'0.4.2'}));
+app.get('/api/config',async()=>({sandbox:false,development,rules:RULES,center:DEFAULT_CENTER,version:'0.4.2',...(development?{routes:roadRoutes.map(({id,name,description,distance,points})=>({id,name,description,distance,points}))}:{})}));
 app.post('/api/auth/beta',{config:{rateLimit:{max:30,timeWindow:'1 minute'}},schema:{body:object({installSecret:{type:'string',pattern:'^[A-Za-z0-9_-]{43,128}$'},accessCode:{type:'string',maxLength:128},name:{type:'string',minLength:1,maxLength:12}},['installSecret'])}},async(request,reply)=>{
   const body=request.body as {installSecret:string;accessCode?:string;name?:string};
   const playerId=`app_${hash(body.installSecret).slice(0,40)}`;
@@ -92,11 +92,12 @@ app.get('/api/nearby',authenticated,async(request)=>{
   if(![center.lat,center.lng].every(Number.isFinite)||Math.abs(center.lat)>80||Math.abs(center.lng)>180)throw problem('位置无效。');
   return {runners:nearby(await store.read(),uid(request),center,Date.now())};
 });
-app.post('/api/runs/start',{...authenticated,schema:{body:object({shareLocation:boolean,invite:{type:'string',maxLength:128},...(development?{simulation:{type:'boolean',const:true},preset:string}:{})},development?['simulation','preset']:[]) }},async(request)=>{
+app.post('/api/runs/start',{...authenticated,schema:{body:object({shareLocation:boolean,invite:{type:'string',maxLength:128},...(development?{simulation:{type:'boolean',const:true},preset:string}:{})}) }},async(request)=>{
   const options=request.body as {shareLocation?:boolean;invite?:string;simulation?:boolean;preset?:string};
   if(options.simulation&&!roadRoutes.some(r=>r.id===options.preset))throw problem('请选择有效的开发测试路线。');
+  if(options.preset&&!options.simulation)throw problem('路线选项仅用于模拟跑步。');
   const activity=await store.change(s=>{expirePlayers(s,Date.now());const existing=Object.values(s.activities).find(a=>a.playerId===uid(request)&&a.status==='active');
-    if(existing){existing.shareLocation=Boolean(options.shareLocation);if(!existing.shareLocation)s.players[uid(request)].live=null;return existing;}
+    if(existing){if(existing.source!==(options.simulation?'simulation':'gps'))throw problem('请先处理当前跑步，再开始另一种跑步。',409);existing.shareLocation=Boolean(options.shareLocation);if(!existing.shareLocation)s.players[uid(request)].live=null;return existing;}
     const a=startActivity(s,uid(request),Date.now(),options);
     if(options.simulation){const route=simulationRoute(uid(request),options.preset,Date.now()).map((p:Omit<Sample,'seq'>)=>({...p,time:Math.round(p.time)}));Object.assign(a,{simulationRoute:route,startedAt:route[0].time,roadRouteName:roadRoutes.find(r=>r.id===options.preset)!.name});}
     return a;

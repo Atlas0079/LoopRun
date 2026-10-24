@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import com.amap.api.maps.AMap
+import com.amap.api.maps.AMapOptions
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.CoordinateConverter
 import com.amap.api.maps.MapView
@@ -63,13 +64,14 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
       try {
         MapsInitializer.updatePrivacyShow(context, true, true)
         MapsInitializer.updatePrivacyAgree(context, true)
-        val view = MapView(context)
+        val view = MapView(context, AMapOptions().zoomControlsEnabled(true))
         mapView = view
         view.onCreate(Bundle())
         addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val sdk = view.map
         map = sdk
-        sdk.uiSettings.isZoomControlsEnabled = false
+        sdk.uiSettings.isZoomControlsEnabled = true
+        sdk.uiSettings.zoomPosition = AMapOptions.ZOOM_POSITION_RIGHT_BOTTOM
         sdk.uiSettings.isScaleControlsEnabled = true
         sdk.uiSettings.isRotateGesturesEnabled = false
         sdk.uiSettings.isTiltGesturesEnabled = false
@@ -77,6 +79,8 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
         sdk.setMaxZoomLevel(19f)
         sdk.moveCamera(CameraUpdateFactory.newLatLngZoom(display(LatLng(31.2353, 121.4747)), 16f))
         sdk.setOnMapLoadedListener {
+          sdk.uiSettings.isZoomControlsEnabled = true
+          sdk.uiSettings.zoomPosition = AMapOptions.ZOOM_POSITION_RIGHT_BOTTOM
           loaded = true
           handler.removeCallbacks(timeout)
           onMapStatus(mapOf("error" to ""))

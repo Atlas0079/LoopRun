@@ -9,9 +9,10 @@ import java.net.URL
 import java.util.concurrent.TimeUnit
 
 object LocalRuns {
-  @Volatile private var instance: RunDatabase? = null
-  fun get(context: Context): RunDatabase = instance ?: synchronized(this) {
-    instance ?: RunDatabase(context.applicationContext).also { instance = it }
+  private val instances = mutableMapOf<Boolean, RunDatabase>()
+  @Synchronized fun get(context: Context): RunDatabase {
+    val development = Vault(context).developerMode()
+    return instances.getOrPut(development) { RunDatabase(context.applicationContext, if (development) "looprun-development-gps.db" else "looprun-gps.db") }
   }
 }
 class ApiFailure(val status: Int, message: String) : Exception(message)
@@ -43,7 +44,6 @@ object Uploader {
     } finally { connection.disconnect() }
   }
   @Synchronized fun sync(context: Context) {
-    if (Vault(context).developerMode()) return
     val db = LocalRuns.get(context); val run = db.current() ?: return
     val id = run.getString("id"); val vault = Vault(context); val token = vault.profile("token"); val base = vault.profile("server")
     if (token.isEmpty() || base.isEmpty()) return

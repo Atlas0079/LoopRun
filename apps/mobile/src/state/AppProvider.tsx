@@ -25,7 +25,8 @@ export function AppProvider({children}:{children:React.ReactNode}){
   const [connection,setConnection]=useState<Connection>(()=>Native.configuration()),[state,setState]=useState<ServerState|null>(null),[nativeSnapshot,setNativeSnapshot]=useState<Snapshot>({}),[privacy,setPrivacy]=useState(()=>connection.privacy==='accepted'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[mode,setMode]=useState<'mine'|'pool'>('pool'),[bbox,setBbox]=useState(''),[historyRoute,storeHistoryRoute]=useState<GeoPoint[]|null>(null),[previewLabel,setPreviewLabel]=useState<string|null>(null),[routes,setRoutes]=useState<DeveloperRoute[]>([]),[simulation,storeSimulation]=useState<Simulation|null>(null),[simulationReport,setSimulationReport]=useState<Snapshot>({});
   const connectionRef=useRef(connection),queryRef=useRef({mode,bbox}),refreshing=useRef<Connection|null>(null),simulationRef=useRef<Simulation|null>(null),working=useRef(false);
   const developerMode=connection.developerMode;
-  const snapshot:Snapshot=developerMode?(simulation?{run:simulation}:simulationReport):nativeSnapshot;
+  const snapshot:Snapshot=simulation?{run:simulation}:nativeSnapshot.run?nativeSnapshot:
+    (simulationReport.report?.finishedAt||0)>(nativeSnapshot.report?.finishedAt||0)?simulationReport:nativeSnapshot;
   function updateSimulation(value:Simulation|null){simulationRef.current=value;storeSimulation(value);}
   function setHistoryRoute(points:GeoPoint[]|null){setPreviewLabel(null);storeHistoryRoute(points);}
   function previewRoute(route:DeveloperRoute){if(!connectionRef.current.developerMode)throw new Error('请先开启开发者模式');setPreviewLabel(route.name);storeHistoryRoute(route.points.map(p=>({...p,time:0,accuracy:5})));}
@@ -33,7 +34,7 @@ export function AppProvider({children}:{children:React.ReactNode}){
   const request=useCallback(<T,>(path:string,body?:unknown)=>{
     const current=connectionRef.current;if(!current.server||!current.token)throw new Error('请先连接当前环境的服务器');return fetchJson<T>(current.server,path,body,current.token);
   },[]);
-  const local=useCallback(async()=>{const current=connectionRef.current;if(current.developerMode)return;const value=JSON.parse(await Native.snapshot());if(connectionRef.current===current)setNativeSnapshot(value);},[]);
+  const local=useCallback(async()=>{const current=connectionRef.current;const value=JSON.parse(await Native.snapshot());if(connectionRef.current===current)setNativeSnapshot(value);},[]);
   const refresh=useCallback(async()=>{
     const current=connectionRef.current;
     if(!current.token||refreshing.current===current)return;refreshing.current=current;
@@ -81,26 +82,26 @@ export function AppProvider({children}:{children:React.ReactNode}){
   }
   async function setDeveloperMode(enabled:boolean){
     const current=connectionRef.current;if(current.developerMode===enabled)return current;
-    if(snapshot.run)throw new Error('请先结束、上传或放弃当前活动，再切换开发者模式');
+    if(snapshot.run||JSON.parse(await Native.snapshot()).run)throw new Error('请先结束、上传或放弃当前活动，再切换开发者模式');
     if(current.token){const remote=await request<ServerState>('/state');if(remote.activeActivity)throw new Error('服务器仍有未完成的活动，请先处理后再切换模式');}
     await Native.setDeveloperMode(enabled);
     const next=Native.configuration();connectionRef.current=next;setConnection(next);setState(null);setNativeSnapshot({});setSimulationReport({});updateSimulation(null);setHistoryRoute(null);setRoutes([]);setMode('pool');setBbox('');await local();await refresh();return next;
   }
   async function start(share:boolean){
-    if(connectionRef.current.developerMode)throw new Error('开发者模式请从开发工具选择模拟路线');
+    if(simulationRef.current||JSON.parse(await Native.snapshot()).run||state?.activeActivity)throw new Error('请先处理当前活动');
     if(!privacy)throw new Error('请先阅读并确认地图和定位用途');
     const permissions=[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION];
     const granted=await PermissionsAndroid.requestMultiple(permissions);
     if(granted[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION]!==PermissionsAndroid.RESULTS.GRANTED)throw new Error('跑步需要精确定位，请在系统设置中允许精确位置');
     if(Platform.OS==='android'&&Number(Platform.Version)>=33)await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
     const activity=await request<{id:string;startedAt:number;now:number;shareLocation:boolean}>('/runs/start',{shareLocation:share});
-    try{await Native.begin(activity.id,activity.startedAt,activity.now-Date.now(),activity.shareLocation);setHistoryRoute(null);await local();await refresh();}
+    try{await Native.begin(activity.id,activity.startedAt,activity.now-Date.now(),activity.shareLocation);setSimulationReport({});setHistoryRoute(null);await local();await refresh();}
     catch(e){await request('/runs/'+activity.id+'/cancel',{}).catch(()=>{});throw e;}
   }
   async function startSimulation(preset:string){
     if(!connectionRef.current.developerMode)throw new Error('请先开启开发者模式');
     if(!privacy)throw new Error('请先在地图确认地图和定位用途');
-    if(simulationRef.current||state?.activeActivity)throw new Error('请先处理当前活动');
+    if(simulationRef.current||JSON.parse(await Native.snapshot()).run||state?.activeActivity)throw new Error('请先处理当前活动');
     const activity=await request<SimulatedActivity>('/runs/start',{simulation:true,preset,shareLocation:false});
     updateSimulation(createSimulation(activity));setSimulationReport({});setHistoryRoute(null);await refresh();
   }
@@ -122,9 +123,9 @@ export function AppProvider({children}:{children:React.ReactNode}){
       updateSimulation(null);setSimulationReport({report,reportId:current.id});await refresh();
     }catch(e){const latest=simulationRef.current;if(latest)updateSimulation({...latest,status:'pending',error:e instanceof Error?e.message:'模拟上传失败，请重试'});throw e;}
   }
-  async function sync(){if(connectionRef.current.developerMode){await syncSimulation();return;}try{setNativeSnapshot(JSON.parse(await Native.sync()));}finally{await local();await refresh();}}
-  async function stop(){if(connectionRef.current.developerMode){await syncSimulation();return;}await Native.stop();await local();await sync();}
-  async function discard(){if(connectionRef.current.developerMode){const run=simulationRef.current;if(run)await request('/runs/'+run.id+'/cancel',{});updateSimulation(null);setSimulationReport({});await refresh();return;}await Native.discard();await local();await sync();}
+  async function sync(){if(simulationRef.current){await syncSimulation();return;}try{setNativeSnapshot(JSON.parse(await Native.sync()));}finally{await local();await refresh();}}
+  async function stop(){if(simulationRef.current){await syncSimulation();return;}await Native.stop();await local();await sync();}
+  async function discard(){const run=simulationRef.current;if(run){await request('/runs/'+run.id+'/cancel',{});updateSimulation(null);setSimulationReport({});await refresh();return;}await Native.discard();await local();await sync();}
   async function acceptPrivacy(){await Native.acceptPrivacy();setPrivacy(true);}
   return <Context.Provider value={{connection,developerMode,routes,state,snapshot,privacy,busy,error,mode,historyRoute,previewLabel,setHistoryRoute,previewRoute,setMode,setBbox,acceptPrivacy,connect,setDeveloperMode,request,start,startSimulation,controlBots,stop,discard,sync,perform,refresh}}>{children}</Context.Provider>;
 }

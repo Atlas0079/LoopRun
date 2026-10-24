@@ -8,7 +8,7 @@ import android.location.Location
 import org.json.JSONArray
 import org.json.JSONObject
 
-class RunDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "looprun-gps.db", null, 1) {
+class RunDatabase(context: Context, name: String) : SQLiteOpenHelper(context.applicationContext, name, null, 1) {
   init { setWriteAheadLoggingEnabled(true) }
   override fun onCreate(db: SQLiteDatabase) {
     db.execSQL("CREATE TABLE runs(id TEXT PRIMARY KEY,started INTEGER NOT NULL,offset_ms INTEGER NOT NULL,share INTEGER NOT NULL,status TEXT NOT NULL,ended INTEGER,acked INTEGER NOT NULL DEFAULT 0,distance REAL NOT NULL DEFAULT 0,max_gap INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',report TEXT)")

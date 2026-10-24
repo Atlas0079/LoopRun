@@ -40,7 +40,6 @@ class LoopRunNativeModule : Module() {
       }
     }
     AsyncFunction("begin") { id: String, started: Double, offset: Double, share: Boolean ->
-      check(!Vault(context).developerMode()) { "开发者模式请使用模拟跑步" }
       check(appContext.currentActivity != null) { "请从前台页面开始跑步" }
       check(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) { "跑步记录需要精确定位权限" }
       LocalRuns.get(context).create(id, started.toLong(), offset.toLong(), share)
@@ -53,7 +52,7 @@ class LoopRunNativeModule : Module() {
     AsyncFunction("discard") {
       LocalRuns.get(context).stop(true); context.stopService(Intent(context, RunService::class.java)); Uploader.schedule(context)
     }
-    AsyncFunction("snapshot") { if (Vault(context).developerMode()) "{}" else LocalRuns.get(context).snapshot() }
+    AsyncFunction("snapshot") { LocalRuns.get(context).snapshot() }
     AsyncFunction("sync") { Uploader.sync(context); LocalRuns.get(context).snapshot() }
   }
 }
