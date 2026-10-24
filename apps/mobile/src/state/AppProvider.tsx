@@ -7,11 +7,11 @@ export type Cell={key:string;owner:string|null;fortification:number};
 export type Member={id:string;name:string;color:string;ownedCells:number;area:number};
 export type GeoPoint={lat:number;lng:number;time:number;accuracy:number};
 export type DeveloperRoute={id:string;name:string;description:string;distance:number;points:{lat:number;lng:number}[]};
-export type Bot={id:string;playerId?:string;name:string;phase:string;route?:string;routeId?:string;progress:number;completed:number;total:number;error:string|null};
+export type Bot={id:string;playerId?:string;name:string;phase:string;route?:string;routeId?:string;startPercent:number;progress:number;completed:number;total:number;error:string|null};
 export type Bots={enabled:boolean;players:Bot[]};
 export type ServerState={now:number;player:Member&{damage:number;fortifiedCells:number;runCount:number;totalDistance:number;center?:{lat:number;lng:number};removedReason?:string};pool:null|{id:string;name:string;cells:Cell[];members:Member[]};activities:(Report&{id:string;routeName?:string})[];activeActivity?:(SimulatedActivity&{source:'simulation'})|{id:string;source:'gps'}|null;map:{limited:boolean};developerBots?:Bots};
 export type Connection=Configuration;
-type ContextValue={connection:Connection;developerMode:boolean;routes:DeveloperRoute[];state:ServerState|null;snapshot:Snapshot;privacy:boolean;busy:boolean;error:string;mode:'mine'|'pool';historyRoute:GeoPoint[]|null;previewLabel:string|null;setHistoryRoute:(p:GeoPoint[]|null)=>void;previewRoute:(route:DeveloperRoute)=>void;setMode:(m:'mine'|'pool')=>void;setBbox:(s:string)=>void;acceptPrivacy:()=>Promise<void>;connect:(base:string,code:string,name:string)=>Promise<void>;setDeveloperMode:(enabled:boolean)=>Promise<Connection>;request:<T>(path:string,body?:unknown)=>Promise<T>;start:(share:boolean)=>Promise<void>;startSimulation:(preset:string)=>Promise<void>;controlBots:(action:'start'|'pause'|'run',playerId?:string,preset?:string)=>Promise<void>;stop:()=>Promise<void>;discard:()=>Promise<void>;sync:()=>Promise<void>;perform:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>};
+type ContextValue={connection:Connection;developerMode:boolean;routes:DeveloperRoute[];state:ServerState|null;snapshot:Snapshot;privacy:boolean;busy:boolean;error:string;mode:'mine'|'pool';historyRoute:GeoPoint[]|null;previewLabel:string|null;setHistoryRoute:(p:GeoPoint[]|null)=>void;previewRoute:(route:DeveloperRoute)=>void;setMode:(m:'mine'|'pool')=>void;setBbox:(s:string)=>void;acceptPrivacy:()=>Promise<void>;connect:(base:string,code:string,name:string)=>Promise<void>;setDeveloperMode:(enabled:boolean)=>Promise<Connection>;request:<T>(path:string,body?:unknown)=>Promise<T>;start:(share:boolean)=>Promise<void>;startSimulation:(preset:string)=>Promise<void>;controlBots:(action:'start'|'pause'|'run',playerId?:string,preset?:string,startPercent?:number)=>Promise<void>;stop:()=>Promise<void>;discard:()=>Promise<void>;sync:()=>Promise<void>;perform:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>};
 const Context=createContext<ContextValue|null>(null);
 async function fetchJson<T>(base:string,path:string,body?:unknown,token?:string):Promise<T>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
@@ -105,9 +105,9 @@ export function AppProvider({children}:{children:React.ReactNode}){
     const activity=await request<SimulatedActivity>('/runs/start',{simulation:true,preset,shareLocation:false});
     updateSimulation(createSimulation(activity));setSimulationReport({});setHistoryRoute(null);await refresh();
   }
-  async function controlBots(action:'start'|'pause'|'run',playerId?:string,preset?:string){
+  async function controlBots(action:'start'|'pause'|'run',playerId?:string,preset?:string,startPercent?:number){
     if(!connectionRef.current.developerMode)throw new Error('请先开启开发者模式');
-    const result=await request<Bots>('/developer/bots',{action,playerId,preset});await refresh();
+    const result=await request<Bots>('/developer/bots',{action,playerId,preset,startPercent});await refresh();
     if(result.players.some(p=>p.phase==='暂停失败，请重试'))throw new Error('部分机器人暂停失败，请重试暂停');
   }
   async function syncSimulation(){

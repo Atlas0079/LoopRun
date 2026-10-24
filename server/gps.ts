@@ -28,7 +28,7 @@ const gpsHost=process.env.GPS_HOST||'127.0.0.1',gpsPort=Number(process.env.GPS_P
 const botBase=`http://${gpsHost==='0.0.0.0'?'127.0.0.1':gpsHost.includes(':')?`[${gpsHost}]`:gpsHost}:${gpsPort}`;
 const bots=development?new ReplayBots(botBase,BOT_PERSONAS,roadRoutes.filter(r=>r.id.startsWith('replay-')),notify,{
   login:(persona:{id:string;name:string})=>({installSecret:createHash('sha256').update(`${process.env.BETA_ACCESS_CODE}:${persona.id}`).digest('base64url'),accessCode:process.env.BETA_ACCESS_CODE,name:persona.name}),
-  catalog:roadRoutes,
+  catalog:roadRoutes,realtime:true,
 }):null;
 const identities=new WeakMap<FastifyRequest,string>();
 async function auth(request:FastifyRequest){
@@ -46,8 +46,8 @@ app.setErrorHandler((error:any,_request,reply)=>{
   if(!known)app.log.error({name:error.name,code:error.code},'GPS request failed');
   reply.code(error.statusCode||(known?400:500)).send({error:error.validation?'请求格式不正确，请检查当前内测版本。':known?error.message:'服务暂不可用，请稍后重试。',code:error.validation?'INVALID_REQUEST':error.code});
 });
-app.get('/api/health',async()=>({ok:true,mode:'gps',development,version:'0.4.2'}));
-app.get('/api/config',async()=>({sandbox:false,development,rules:RULES,center:DEFAULT_CENTER,version:'0.4.2',...(development?{routes:roadRoutes.map(({id,name,description,distance,points})=>({id,name,description,distance,points}))}:{})}));
+app.get('/api/health',async()=>({ok:true,mode:'gps',development,version:'0.5.0'}));
+app.get('/api/config',async()=>({sandbox:false,development,rules:RULES,center:DEFAULT_CENTER,version:'0.5.0',...(development?{routes:roadRoutes.map(({id,name,description,distance,points})=>({id,name,description,distance,points}))}:{})}));
 app.post('/api/auth/beta',{config:{rateLimit:{max:30,timeWindow:'1 minute'}},schema:{body:object({installSecret:{type:'string',pattern:'^[A-Za-z0-9_-]{43,128}$'},accessCode:{type:'string',maxLength:128},name:{type:'string',minLength:1,maxLength:12}},['installSecret'])}},async(request,reply)=>{
   const body=request.body as {installSecret:string;accessCode?:string;name?:string};
   const playerId=`app_${hash(body.installSecret).slice(0,40)}`;
@@ -77,11 +77,11 @@ app.get('/api/state',authenticated,async(request)=>{
   }else if(view.pool){view.pool.cells=view.pool.cells.filter(c=>query.mode!=='mine'||c.owner===uid(request));limited=view.pool.cells.length>3000;view.pool.cells=view.pool.cells.slice(0,3000);}
   return {...view,...(bots?{developerBots:bots.status()}:{}),map:{limited,limit:3000}};
 });
-app.post('/api/developer/bots',{...authenticated,schema:{body:object({action:{type:'string',enum:['start','pause','run']},playerId:string,preset:string},['action'])}},async request=>{
+app.post('/api/developer/bots',{...authenticated,schema:{body:object({action:{type:'string',enum:['start','pause','run']},playerId:string,preset:string,startPercent:{type:'integer',minimum:0,maximum:99}},['action'])}},async request=>{
   if(!bots)throw problem('普通环境没有开发工具。',404);
-  const body=request.body as {action:string;playerId?:string;preset?:string};
+  const body=request.body as {action:string;playerId?:string;preset?:string;startPercent?:number};
   if(body.action==='pause')return bots.pause();
-  if(body.action==='run')return bots.run(body.playerId,body.preset);
+  if(body.action==='run')return bots.run(body.playerId,body.preset,body.startPercent);
   return bots.start();
 });
 app.get('/api/events',{websocket:true,preValidation:auth},socket=>{

@@ -1,11 +1,12 @@
-// Automatic clients use the same authenticated HTTP endpoints as the replay UI.
+import {roadPlayback,playbackPoint,playbackSamples} from '../shared/road-playback.mjs';
+// Automatic clients use the same authenticated HTTP endpoints as ordinary users.
 export class ReplayBots {
   constructor(baseUrl,personas,routes,changed=()=>{},options={}) {
     this.baseUrl=baseUrl;this.personas=personas;this.routes=routes;this.changed=changed;
     this.options=options;this.enabled=false;this.clients=this.makeClients(0);this.pending=Promise.resolve();
   }
-  makeClients(rounds){return this.personas.map((persona,i)=>({persona,phase:'未开始',completed:0,plan:Array.from({length:rounds},(_,round)=>this.routes[(i+round)%this.routes.length]),nextAt:Date.now()+i*1800}));}
-  status(){return {enabled:this.enabled,players:this.clients.map(c=>({id:c.persona.id,playerId:c.playerId,name:c.persona.name,phase:c.phase,route:c.routeName,routeId:c.routeId,progress:c.progress||0,completed:c.completed,total:c.plan?.length||0,error:c.error||null}))};}
+  makeClients(rounds){return this.personas.map((persona,i)=>({persona,startPercent:i*20,phase:'未开始',completed:0,plan:Array.from({length:rounds},(_,round)=>this.routes[(i+round)%this.routes.length]),nextAt:Date.now()+i*1800}));}
+  status(){return {enabled:this.enabled,players:this.clients.map(c=>({id:c.persona.id,playerId:c.playerId,name:c.persona.name,phase:c.phase,route:c.routeName,routeId:c.routeId,startPercent:c.startPercent||0,progress:c.progress||0,completed:c.completed,total:c.plan?.length||0,error:c.error||null}))};}
   async request(client,path,body){
     const response=await fetch(`${this.baseUrl}/api${path}`,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(client.token?{Authorization:`Bearer ${client.token}`}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(8000)});
     const result=await response.json();if(!response.ok)throw Object.assign(new Error(result.error||`HTTP ${response.status}`),{status:response.status});return result;
@@ -17,14 +18,15 @@ export class ReplayBots {
     this.clients=this.makeClients(4);for(const c of this.clients)c.phase='等待出发';
     this.activate();return this.status();
   }
-  async run(playerId,preset){
+  async run(playerId,preset,startPercent=0){
     if(this.pausing||this.enabled)throw new Error('请先暂停所有机器人，再指定单独路线。');
     await this.pending;
     if(this.pausing||this.enabled)throw new Error('请先暂停所有机器人，再指定单独路线。');
     const c=this.clients.find(c=>c.persona.id===playerId),route=(this.options.catalog||this.routes).find(r=>r.id===preset);
     if(!c||!route)throw new Error('请选择有效的机器人与路线。');
+    roadPlayback(route,startPercent);
     if(c.activity)throw new Error('这位机器人正在跑步，请先暂停再选择路线。');
-    Object.assign(c,{plan:[route],completed:0,nextAt:Date.now(),phase:'等待出发',error:null,progress:0});
+    Object.assign(c,{plan:[route],routeName:route.name,routeId:route.id,startPercent,completed:0,nextAt:Date.now(),phase:'等待出发',error:null,progress:0});
     if(!this.enabled)this.activate();else this.changed();return this.status();
   }
   activate(){
@@ -64,10 +66,12 @@ export class ReplayBots {
           const route=c.plan[c.completed];
           const state=await this.request(c,'/state');
           if(state.activeActivity){await this.request(c,`/runs/${state.activeActivity.id}/cancel`,{});}
-          c.activity=await this.request(c,'/runs/start',{simulation:true,preset:route.id,shareLocation:true});
+          c.activity=await this.request(c,'/runs/start',this.options.realtime?{shareLocation:true}:{simulation:true,preset:route.id,shareLocation:true});
+          if(this.options.realtime){c.playback=roadPlayback(route,c.startPercent||0);c.through=0;}
           c.routeName=route.name;c.routeId=route.id;c.wallStartedAt=Date.now();c.phase='跑步中';c.error=null;c.lastLiveAt=0;
         }
         if(c.activity){
+          if(this.options.realtime){await this.advanceRealtime(c);continue;}
           const route=c.activity.route,index=Math.min(route.length-1,Math.floor((Date.now()-c.wallStartedAt)/14000*route.length));
           const point=route[index];
           c.progress=Math.round((index+1)/route.length*100);
@@ -89,5 +93,25 @@ export class ReplayBots {
     }
     if(this.clients.every(c=>c.completed>=(c.plan?.length||0))){this.enabled=false;clearInterval(this.timer);}
     if(before!==JSON.stringify(this.status()))this.changed();
+  }
+  async advanceRealtime(c){
+    const now=Date.now(),elapsed=now-c.activity.startedAt;
+    for(let batch=0;batch<30;batch++){
+      const points=playbackSamples(c.playback,c.activity.startedAt,c.through,now);
+      if(!points.length)break;
+      const ack=await this.request(c,`/runs/${c.activity.id}/points`,{points});
+      if(ack.acceptedThrough!==points.at(-1).seq)throw new Error('机器人采样确认序号无效。');
+      c.through=ack.acceptedThrough;
+    }
+    c.progress=Math.min(100,Math.floor(elapsed/c.playback.duration*100));
+    if(!c.lastLiveAt||now-c.lastLiveAt>=5000){
+      const {lat,lng}=playbackPoint(c.playback,elapsed);
+      await this.request(c,'/live',{activityId:c.activity.id,lat,lng,share:true});c.lastLiveAt=now;
+    }
+    c.phase='跑步中';c.error=null;
+    if(elapsed>=c.playback.duration){
+      await this.request(c,`/runs/${c.activity.id}/finish`,{endedAt:c.activity.startedAt+c.playback.duration,pointCount:c.through});
+      c.activity=null;c.completed++;c.nextAt=now+9000;c.phase=c.completed>=c.plan.length?'本轮完成':'等待下一圈';
+    }
   }
 }

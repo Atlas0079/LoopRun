@@ -2,6 +2,9 @@ package expo.modules.looprun
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +23,9 @@ import com.amap.api.maps.model.Polygon
 import com.amap.api.maps.model.PolygonOptions
 import com.amap.api.maps.model.Polyline
 import com.amap.api.maps.model.PolylineOptions
+import com.amap.api.maps.model.BitmapDescriptorFactory
+import com.amap.api.maps.model.Marker
+import com.amap.api.maps.model.MarkerOptions
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
@@ -52,6 +58,8 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
   private var route: Polyline? = null
   private var routeOutline: Polyline? = null
   private var position: Circle? = null
+  private val runners = mutableMapOf<String, Marker>()
+  private val runnerLabels = mutableMapOf<String, String>()
   private val converted = object : LinkedHashMap<LatLng, LatLng>(4096, .75f, true) {
     override fun removeEldestEntry(eldest: MutableMap.MutableEntry<LatLng, LatLng>?) = size > 30000
   }
@@ -173,6 +181,31 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
         .fillColor(Color.rgb(53, 103, 217)).strokeColor(Color.WHITE).strokeWidth(3f).zIndex(5f))
       else position!!.center = points.last()
     } else { position?.remove(); position = null }
+    val nearby = scene.getJSONArray("runners")
+    val visible = mutableSetOf<String>()
+    for (i in 0 until nearby.length()) {
+      val runner = nearby.getJSONObject(i)
+      val id = runner.getString("id"); val name = runner.getString("name"); val color = runner.getString("color")
+      val point = display(LatLng(runner.getDouble("lat"), runner.getDouble("lng")))
+      visible.add(id)
+      if (runnerLabels[id] != name + color) {
+        runners.remove(id)?.remove()
+        val density = resources.displayMetrics.density
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 11 * density; textAlign = Paint.Align.CENTER }
+        val w = (paint.measureText(name) + 16 * density).toInt().coerceAtLeast((28 * density).toInt())
+        val bitmap = Bitmap.createBitmap(w, (44 * density).toInt(), Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        paint.color = Color.WHITE; canvas.drawRoundRect(0f, 0f, w.toFloat(), 21 * density, 5 * density, 5 * density, paint)
+        paint.color = Color.rgb(33, 61, 48); canvas.drawText(name, w / 2f, 15 * density, paint)
+        paint.color = Color.WHITE; canvas.drawCircle(w / 2f, 33 * density, 10 * density, paint)
+        paint.color = Color.parseColor(color); canvas.drawCircle(w / 2f, 33 * density, 8 * density, paint)
+        paint.color = Color.WHITE; paint.textSize = 10 * density; canvas.drawText("人", w / 2f, 37 * density, paint)
+        runners[id] = sdk.addMarker(MarkerOptions().position(point).title(name).snippet("共享大致位置 · 约 80 米区域")
+          .icon(BitmapDescriptorFactory.fromBitmap(bitmap)).anchor(.5f, 1f).zIndex(10f))
+        runnerLabels[id] = name + color
+      } else runners[id]?.position = point
+    }
+    for (id in runners.keys.toList()) if (id !in visible) { runners.remove(id)?.remove(); runnerLabels.remove(id) }
     val camera = scene.optJSONObject("camera") ?: return
     if (!loaded || width == 0 || height == 0 || camera.getString("id") == cameraId) return
     val cameraPoints = coordinates(camera.getJSONArray("points"))
@@ -199,6 +232,6 @@ class LoopRunMapView(context: Context, appContext: AppContext) : ExpoView(contex
     handler.removeCallbacks(timeout)
     views.remove(this)
     mapView?.onPause(); mapView?.onDestroy(); mapView = null; map = null
-    polygons.clear(); cellKeys.clear(); converted.clear()
+    polygons.clear(); cellKeys.clear(); converted.clear(); runners.clear(); runnerLabels.clear()
   }
 }
