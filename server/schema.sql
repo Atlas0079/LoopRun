@@ -1,6 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE TABLE IF NOT EXISTS gps_meta (id integer PRIMARY KEY CHECK(id=1), schema_version integer NOT NULL);
 INSERT INTO gps_meta VALUES (1,1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS gps_environment (id integer PRIMARY KEY CHECK(id=1), name text NOT NULL CHECK(name IN ('gps','development')));
 CREATE TABLE IF NOT EXISTS players (id text PRIMARY KEY, data jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS pools (id text PRIMARY KEY, data jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS territory_cells (

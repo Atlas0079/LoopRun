@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
 import { RULES,DEFAULT_CENTER,COLORS } from '../shared/config.mjs';
 import { addPlayer,expirePlayers,startActivity,finishActivity,cancelActivity,updateLive,publicState,nearby } from './game.mjs';
-import { PERSONAS,ROAD_CATALOG,simulationRoute } from './sandbox.mjs';
+import { PERSONAS,BOT_PERSONAS,ROAD_CATALOG,simulationRoute } from './sandbox.mjs';
+import { ReplayBots } from './replay-bots.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const production=process.env.NODE_ENV==='production';
@@ -21,6 +22,7 @@ if(!production) { const {createServer}=await import('vite'); vite=await createSe
 const subscribers=new Set(), buckets=new Map();
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const notify=()=>{ for(const response of subscribers) response.write('event: refresh\ndata: {}\n\n'); };
+const bots=sandbox?new ReplayBots(`http://${host==='0.0.0.0'?'127.0.0.1':host.includes(':')?`[${host}]`:host}:${port}`,BOT_PERSONAS,ROAD_CATALOG.routes.filter(r=>r.id.startsWith('replay-')),notify):null;
 function send(response,status,payload) { response.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); response.end(JSON.stringify(payload)); }
 function fail(message,status=400,code) { return Object.assign(new Error(message),{status,code}); }
 function auth(request,state) {
@@ -64,7 +66,8 @@ async function api(request,response,url) {
   if(path==='/api/auth/development' && method==='POST') {
     if(!sandbox) throw fail('开发身份仅在本地沙盒可用。',404);
     const data=await body(request);
-    const persona=PERSONAS.find(p=>p.id===data.persona) || PERSONAS[0];
+    const persona=[...PERSONAS,...BOT_PERSONAS].find(p=>p.id===data.persona);
+    if(!persona)throw fail('请选择有效的道路回放身份。');
     store.change(s=>addPlayer(s,{...persona,kind:'road-replay'},now));
     return send(response,200,{token:login(response,persona.id),playerId:persona.id});
   }
@@ -91,7 +94,14 @@ async function api(request,response,url) {
   const expired=store.change(s=>expirePlayers(s,now,wallNow));
   if(expired) notify();
   const state=store.read(), playerId=auth(request,state);
-  if(path==='/api/state' && method==='GET') return send(response,200,publicState(state,playerId,now));
+  if(path==='/api/state' && method==='GET') return send(response,200,{...publicState(state,playerId,now),...(bots?{replayBots:bots.status()}:{})});
+  if(path==='/api/sandbox/bots' && method==='POST') {
+    if(!bots)throw fail('此操作仅在道路回放环境可用。',404);
+    const data=await body(request);
+    if(data.action==='start')return send(response,200,await bots.start());
+    if(data.action==='pause')return send(response,200,await bots.pause());
+    throw fail('请选择启动或暂停机器人。');
+  }
   if(/^\/api\/runs\/[^/]+$/.test(path) && method==='GET') {
     const a=state.activities[path.split('/')[3]];
     if(!a || a.playerId!==playerId || a.status!=='completed') throw fail('跑步记录不存在。',404);
@@ -160,6 +170,7 @@ async function api(request,response,url) {
   }
   else if(path==='/api/sandbox/advance' && method==='POST') {
     if(!sandbox) throw fail('此操作仅在道路回放环境可用。',404);
+    if(bots.enabled)throw fail('请先暂停机器人，再推进日期。');
     const days=Number(data.days);
     if(![1,3,4,14].includes(days)) throw fail('请选择支持的回放日期间隔。');
     result=store.change(s=>{
@@ -203,5 +214,5 @@ const server=http.createServer(async(request,response)=>{
 const sweep=setInterval(()=>{try {if(store.change(s=>expirePlayers(s,Date.now()+s.demoOffsetMs,Date.now()))) notify();} catch(error) {console.error('Maintenance failed:',error.message);}},60000);
 sweep.unref();
 server.listen(port,host,()=>console.log(`LoopRun ${sandbox?'ROAD REPLAY':'PRODUCTION'} ready at ${publicUrl}`));
-async function shutdown(){clearInterval(sweep);for(const r of subscribers)r.end();await vite?.close();server.close(()=>{store.close();process.exit(0);});}
+async function shutdown(){clearInterval(sweep);await bots?.pause();for(const r of subscribers)r.end();await vite?.close();server.close(()=>{store.close();process.exit(0);});}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

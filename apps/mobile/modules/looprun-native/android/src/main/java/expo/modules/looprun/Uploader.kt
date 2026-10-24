@@ -43,8 +43,9 @@ object Uploader {
     } finally { connection.disconnect() }
   }
   @Synchronized fun sync(context: Context) {
+    if (Vault(context).developerMode()) return
     val db = LocalRuns.get(context); val run = db.current() ?: return
-    val id = run.getString("id"); val vault = Vault(context); val token = vault.get("token"); val base = vault.get("server")
+    val id = run.getString("id"); val vault = Vault(context); val token = vault.profile("token"); val base = vault.profile("server")
     if (token.isEmpty() || base.isEmpty()) return
     try {
       if (run.getString("status") == "cancel_pending") {

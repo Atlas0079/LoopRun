@@ -13,6 +13,10 @@ import javax.crypto.spec.GCMParameterSpec
 
 class Vault(private val context: Context) {
   private val prefs = context.getSharedPreferences("looprun-vault", Context.MODE_PRIVATE)
+  fun developerMode(): Boolean = get("developer-mode") == "enabled"
+  private fun profileKey(name: String): String = if (developerMode()) "developer-$name" else name
+  fun profile(name: String): String = get(profileKey(name))
+  fun putProfile(name: String, value: String) = put(profileKey(name), value)
   private fun key(): SecretKey {
     val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     (store.getKey("looprun-credentials", null) as? SecretKey)?.let { return it }
@@ -35,8 +39,8 @@ class Vault(private val context: Context) {
     return String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
   }
   @Synchronized fun installSecret(): String {
-    get("install-secret").takeIf { it.isNotEmpty() }?.let { return it }
+    profile("install-secret").takeIf { it.isNotEmpty() }?.let { return it }
     val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
-    return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING).also { put("install-secret", it) }
+    return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING).also { putProfile("install-secret", it) }
   }
 }

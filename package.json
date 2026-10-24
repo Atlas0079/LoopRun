@@ -1,6 +1,6 @@
 {
   "name": "looprun",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "圈界 Android 跑步领地 App 与服务器",
@@ -10,13 +10,15 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env server/index.mjs",
     "build": "vite build",
-    "start": "NODE_ENV=production node --env-file-if-exists=.env server/index.mjs",
+    "start": "node scripts/start.mjs",
     "check": "node scripts/check.mjs",
     "test:local": "node --test .local-tests/*.test.mjs",
     "gps:dev": "tsx --env-file-if-exists=.env.gps.local server/gps.ts",
     "gps:check": "tsc --noEmit -p server/tsconfig.json",
     "android:build": "node scripts/build-android.mjs",
-    "gps:db": "node scripts/gps-local.mjs"
+    "gps:db": "node scripts/gps-local.mjs",
+    "developer:db": "node scripts/gps-local.mjs --development",
+    "developer:dev": "tsx --env-file=.env.development.local server/gps.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.1",

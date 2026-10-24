@@ -16,10 +16,13 @@ const same = (a:unknown,b:unknown) => JSON.stringify(a)===JSON.stringify(b);
 export class PgStore {
   readonly db: Pool;
   constructor(url:string){this.db=new Pool({connectionString:url,max:8});}
-  async init(){
+  async init(environment:'gps'|'development'='gps'){
     await this.db.query(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));
     const row=(await this.db.query('SELECT schema_version FROM gps_meta WHERE id=1')).rows[0];
     if(row.schema_version!==1)throw new Error('GPS 数据库结构不匹配，请使用当前独立内测库。');
+    await this.db.query('INSERT INTO gps_environment VALUES (1,$1) ON CONFLICT DO NOTHING',[environment]);
+    const marker=(await this.db.query('SELECT name FROM gps_environment WHERE id=1')).rows[0];
+    if(marker.name!==environment)throw new Error('数据库环境不匹配，普通 GPS 与开发测试必须使用独立数据库。');
   }
   private async load(c:Pool|PoolClient):Promise<World>{
     const state=emptyState() as World;
