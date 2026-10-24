@@ -1,10 +1,9 @@
 {
   "name": "looprun-mobile",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/metro-runtime": "~58.0.15",
-    "@maplibre/maplibre-react-native": "^11.5.0",
     "expo": "~58.0.17",
     "expo-constants": "~58.0.13",
     "expo-linking": "~58.0.14",

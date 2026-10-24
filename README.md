@@ -2,7 +2,7 @@
 
 真实跑步闭环产生 50 米六边形领地，服务器计算占领、加固、削弱和匹配。
 
-当前客户端仅交付 **Android App**：React Native / TypeScript / Expo、MapLibre / OpenStreetMap 原生地图、Android 前台定位服务、本机 SQLite。服务端使用 Fastify、PostgreSQL / PostGIS，并复用现有地理计算与游戏规则。
+当前客户端仅交付 **Android App**：React Native / TypeScript / Expo、高德 Android SDK 原生地图、Android 前台定位服务、本机 SQLite。服务端使用 Fastify、PostgreSQL / PostGIS，并复用现有地理计算与游戏规则。
 
 ## Android 用户体验
 
@@ -20,11 +20,12 @@
 2. npm run gps:dev：启动普通服务，默认 http://127.0.0.1:4180 。
 3. npm run developer:db：在同一本机 PostgreSQL 实例内准备独立开发库。
 4. npm run developer:dev：启动开发服务，默认 http://127.0.0.1:4182 。
-5. npm run android:build：输出 artifacts/LoopRun-0.4.0-android-arm64.apk。
+5. 在本地 .local-credentials/amap.json 配置 androidKey（高德 Android SDK Key，绑定包名和签名），或设置 LOOPRUN_AMAP_KEY。
+6. npm run android:build：输出 artifacts/LoopRun-0.4.1-android-arm64.apk。
 
 手机通过 USB 连接后，对 4180 和 4182 分别执行 adb reverse。App 设置中填写对应服务地址和各自的内测邀请口令。普通口令位于 .env.gps.local，开发口令位于 .env.development.local，不写入客户端或共享文档。
 
-Android 模拟器构建可用 npm run android:build -- --architectures=arm64-v8a,x86_64，同时包含真机与模拟器架构。
+高德 3D SDK 当前构建仅支持 ARM64 真机；不交付 x86_64 模拟器安装包。
 
 ## 项目入口
 

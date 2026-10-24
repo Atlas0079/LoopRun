@@ -8,6 +8,11 @@ module.exports = config => {
     app.$['android:usesCleartextTraffic']='true';
     app.$['android:icon']='@drawable/looprun_icon';
     app.$['android:roundIcon']='@drawable/looprun_icon';
+    const keyFile=path.resolve(__dirname,'../../../.local-credentials/amap.json');
+    const key=process.env.LOOPRUN_AMAP_KEY||(fs.existsSync(keyFile)?JSON.parse(fs.readFileSync(keyFile,'utf8')).androidKey:'');
+    if(!/^[a-f0-9]{32}$/i.test(key))throw new Error('请在本地 .local-credentials/amap.json 配置 androidKey 后构建高德地图。');
+    app['meta-data']=(app['meta-data']||[]).filter(item=>item.$['android:name']!=='com.amap.api.v2.apikey');
+    app['meta-data'].push({$:{'android:name':'com.amap.api.v2.apikey','android:value':key}});
     return config;
   });
   config = withAndroidStyles(config,config=>{

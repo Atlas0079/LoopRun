@@ -11,9 +11,8 @@ export type Bot={id:string;playerId?:string;name:string;phase:string;route?:stri
 export type Bots={enabled:boolean;players:Bot[]};
 export type ServerState={now:number;player:Member&{damage:number;fortifiedCells:number;runCount:number;totalDistance:number;center?:{lat:number;lng:number};removedReason?:string};pool:null|{id:string;name:string;cells:Cell[];members:Member[]};activities:(Report&{id:string;routeName?:string})[];activeActivity?:(SimulatedActivity&{source:'simulation'})|{id:string;source:'gps'}|null;map:{limited:boolean};developerBots?:Bots};
 export type Connection=Configuration;
-type ContextValue={connection:Connection;developerMode:boolean;routes:DeveloperRoute[];state:ServerState|null;snapshot:Snapshot;privacy:boolean;busy:boolean;error:string;mode:'mine'|'pool';tiles:string;historyRoute:GeoPoint[]|null;previewLabel:string|null;setHistoryRoute:(p:GeoPoint[]|null)=>void;previewRoute:(route:DeveloperRoute)=>void;setMode:(m:'mine'|'pool')=>void;setBbox:(s:string)=>void;acceptPrivacy:()=>Promise<void>;connect:(base:string,code:string,name:string)=>Promise<void>;setDeveloperMode:(enabled:boolean)=>Promise<Connection>;request:<T>(path:string,body?:unknown)=>Promise<T>;start:(share:boolean)=>Promise<void>;startSimulation:(preset:string)=>Promise<void>;controlBots:(action:'start'|'pause'|'run',playerId?:string,preset?:string)=>Promise<void>;stop:()=>Promise<void>;discard:()=>Promise<void>;sync:()=>Promise<void>;perform:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>};
+type ContextValue={connection:Connection;developerMode:boolean;routes:DeveloperRoute[];state:ServerState|null;snapshot:Snapshot;privacy:boolean;busy:boolean;error:string;mode:'mine'|'pool';historyRoute:GeoPoint[]|null;previewLabel:string|null;setHistoryRoute:(p:GeoPoint[]|null)=>void;previewRoute:(route:DeveloperRoute)=>void;setMode:(m:'mine'|'pool')=>void;setBbox:(s:string)=>void;acceptPrivacy:()=>Promise<void>;connect:(base:string,code:string,name:string)=>Promise<void>;setDeveloperMode:(enabled:boolean)=>Promise<Connection>;request:<T>(path:string,body?:unknown)=>Promise<T>;start:(share:boolean)=>Promise<void>;startSimulation:(preset:string)=>Promise<void>;controlBots:(action:'start'|'pause'|'run',playerId?:string,preset?:string)=>Promise<void>;stop:()=>Promise<void>;discard:()=>Promise<void>;sync:()=>Promise<void>;perform:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>};
 const Context=createContext<ContextValue|null>(null);
-const defaultTiles='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 async function fetchJson<T>(base:string,path:string,body?:unknown,token?:string):Promise<T>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
   try{
@@ -23,7 +22,7 @@ async function fetchJson<T>(base:string,path:string,body?:unknown,token?:string)
   finally{clearTimeout(timer);}
 }
 export function AppProvider({children}:{children:React.ReactNode}){
-  const [connection,setConnection]=useState<Connection>(()=>Native.configuration()),[state,setState]=useState<ServerState|null>(null),[nativeSnapshot,setNativeSnapshot]=useState<Snapshot>({}),[privacy,setPrivacy]=useState(()=>connection.privacy==='accepted'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[mode,setMode]=useState<'mine'|'pool'>('pool'),[bbox,setBbox]=useState(''),[tiles,setTiles]=useState(defaultTiles),[historyRoute,storeHistoryRoute]=useState<GeoPoint[]|null>(null),[previewLabel,setPreviewLabel]=useState<string|null>(null),[routes,setRoutes]=useState<DeveloperRoute[]>([]),[simulation,storeSimulation]=useState<Simulation|null>(null),[simulationReport,setSimulationReport]=useState<Snapshot>({});
+  const [connection,setConnection]=useState<Connection>(()=>Native.configuration()),[state,setState]=useState<ServerState|null>(null),[nativeSnapshot,setNativeSnapshot]=useState<Snapshot>({}),[privacy,setPrivacy]=useState(()=>connection.privacy==='accepted'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[mode,setMode]=useState<'mine'|'pool'>('pool'),[bbox,setBbox]=useState(''),[historyRoute,storeHistoryRoute]=useState<GeoPoint[]|null>(null),[previewLabel,setPreviewLabel]=useState<string|null>(null),[routes,setRoutes]=useState<DeveloperRoute[]>([]),[simulation,storeSimulation]=useState<Simulation|null>(null),[simulationReport,setSimulationReport]=useState<Snapshot>({});
   const connectionRef=useRef(connection),queryRef=useRef({mode,bbox}),refreshing=useRef<Connection|null>(null),simulationRef=useRef<Simulation|null>(null),working=useRef(false);
   const developerMode=connection.developerMode;
   const snapshot:Snapshot=developerMode?(simulation?{run:simulation}:simulationReport):nativeSnapshot;
@@ -51,7 +50,7 @@ export function AppProvider({children}:{children:React.ReactNode}){
   useEffect(()=>{void local().catch(()=>{});},[local,developerMode]);
   useEffect(()=>{
     const current=connection;if(!current.token)return;
-    void refresh();void fetchJson<{development:boolean;maps:{tiles:string};routes?:DeveloperRoute[]}>(current.server,'/config').then(c=>{if(connectionRef.current!==current)return;if(c.development!==current.developerMode)throw new Error('服务器环境与开发者开关不一致，请重新连接');setTiles(c.maps.tiles);setRoutes(current.developerMode?c.routes||[]:[]);}).catch(e=>{if(connectionRef.current===current)setError(e.message);});
+    void refresh();void fetchJson<{development:boolean;routes?:DeveloperRoute[]}>(current.server,'/config').then(c=>{if(connectionRef.current!==current)return;if(c.development!==current.developerMode)throw new Error('服务器环境与开发者开关不一致，请重新连接');setRoutes(current.developerMode?c.routes||[]:[]);}).catch(e=>{if(connectionRef.current===current)setError(e.message);});
   },[connection,refresh]);
   useEffect(()=>{const timer=setTimeout(()=>{void refresh();},450);return()=>clearTimeout(timer);},[bbox,mode,refresh]);
   useEffect(()=>{
@@ -85,7 +84,7 @@ export function AppProvider({children}:{children:React.ReactNode}){
     if(snapshot.run)throw new Error('请先结束、上传或放弃当前活动，再切换开发者模式');
     if(current.token){const remote=await request<ServerState>('/state');if(remote.activeActivity)throw new Error('服务器仍有未完成的活动，请先处理后再切换模式');}
     await Native.setDeveloperMode(enabled);
-    const next=Native.configuration();connectionRef.current=next;setConnection(next);setState(null);setNativeSnapshot({});setSimulationReport({});updateSimulation(null);setHistoryRoute(null);setRoutes([]);setTiles(defaultTiles);setMode('pool');setBbox('');await local();await refresh();return next;
+    const next=Native.configuration();connectionRef.current=next;setConnection(next);setState(null);setNativeSnapshot({});setSimulationReport({});updateSimulation(null);setHistoryRoute(null);setRoutes([]);setMode('pool');setBbox('');await local();await refresh();return next;
   }
   async function start(share:boolean){
     if(connectionRef.current.developerMode)throw new Error('开发者模式请从开发工具选择模拟路线');
@@ -127,6 +126,6 @@ export function AppProvider({children}:{children:React.ReactNode}){
   async function stop(){if(connectionRef.current.developerMode){await syncSimulation();return;}await Native.stop();await local();await sync();}
   async function discard(){if(connectionRef.current.developerMode){const run=simulationRef.current;if(run)await request('/runs/'+run.id+'/cancel',{});updateSimulation(null);setSimulationReport({});await refresh();return;}await Native.discard();await local();await sync();}
   async function acceptPrivacy(){await Native.acceptPrivacy();setPrivacy(true);}
-  return <Context.Provider value={{connection,developerMode,routes,state,snapshot,privacy,busy,error,mode,tiles,historyRoute,previewLabel,setHistoryRoute,previewRoute,setMode,setBbox,acceptPrivacy,connect,setDeveloperMode,request,start,startSimulation,controlBots,stop,discard,sync,perform,refresh}}>{children}</Context.Provider>;
+  return <Context.Provider value={{connection,developerMode,routes,state,snapshot,privacy,busy,error,mode,historyRoute,previewLabel,setHistoryRoute,previewRoute,setMode,setBbox,acceptPrivacy,connect,setDeveloperMode,request,start,startSimulation,controlBots,stop,discard,sync,perform,refresh}}>{children}</Context.Provider>;
 }
 export function useApp(){const value=useContext(Context);if(!value)throw new Error('缺少 App 状态');return value;}

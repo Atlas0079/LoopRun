@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {Alert,Pressable,StyleSheet,Switch,Text,View} from 'react-native';
+import {Alert,Linking,Pressable,StyleSheet,Switch,Text,View} from 'react-native';
 import {router} from 'expo-router';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import TerritoryMap from '../components/TerritoryMap';
@@ -21,7 +21,7 @@ export default function Home(){
     {app.developerMode&&<View style={s.historyBanner}><Text style={styles.subheading}>开发者模式 · 独立测试环境</Text></View>}
     <View style={s.summary}><Metric value={app.state?area(app.state.player.area):'—'} label="我的领地 / km²"/><Metric value={app.state?String(app.state.player.ownedCells):'—'} label="占领格数"/><Metric value={app.state?String(app.state.player.fortifiedCells):'—'} label="加固已满"/></View>
     <View style={s.toolbar}><View style={s.modes}>{(['mine','pool'] as const).map(mode=><Pressable key={mode} accessibilityRole="button" accessibilityState={{selected:app.mode===mode}} onPress={()=>app.setMode(mode)} style={[s.mode,app.mode===mode&&s.modeSelected]}><Text style={[s.modeText,app.mode===mode&&{color:colors.green,fontWeight:'600'}]}>{mode==='mine'?'我的领地':'同池争夺'}</Text></Pressable>)}</View><Pressable accessibilityRole="button" accessibilityLabel="查看同池跑友" onPress={()=>router.push('/pool')}><Text style={styles.link}>{app.state?.pool?`${app.state.pool.name} · ${app.state.pool.members.length}/6 人`:'未入池'}</Text></Pressable></View>
-    {app.privacy?<TerritoryMap/>:<View style={s.privacy}><Text style={styles.heading}>地图与跑步位置</Text><Text style={styles.text}>查看地图会向 OpenStreetMap 请求当前区域底图。开始跑步后使用精确定位，锁屏时继续保存在本机，并上传至你连接的服务器用于结算。原始轨迹仅本人可见，公开附近位置默认关闭。</Text><Button title="了解并查看地图" onPress={()=>void app.perform(app.acceptPrivacy)} busy={app.busy}/></View>}
+    {app.privacy?<TerritoryMap/>:<View style={s.privacy}><Text style={styles.heading}>地图与跑步位置</Text><Text style={styles.text}>地图由北京高德图强科技有限公司的高德地图 SDK 提供，用于显示底图、跑步路线与领地；SDK 会处理设备及网络信息、地图视野等，详见高德隐私政策。开始跑步后使用精确定位，锁屏时继续保存在本机，并上传至你连接的服务器用于结算。原始轨迹仅本人可见，公开附近位置默认关闭。</Text><Pressable accessibilityRole="link" onPress={()=>void Linking.openURL('https://lbs.amap.com/pages/privacy/')}><Text style={styles.link}>高德地图 SDK 隐私政策</Text></Pressable><Button title="了解并查看地图" onPress={()=>void app.perform(app.acceptPrivacy)} busy={app.busy}/></View>}
     <View style={s.legend}><Text style={styles.small}>50 m / 格 · 深色加固更强</Text>{app.state?.map.limited&&<Text style={styles.small}>请放大查看完整格子</Text>}</View>
     {app.historyRoute&&!run&&<Pressable onPress={()=>app.setHistoryRoute(null)} style={s.historyBanner}><Text style={styles.small}>{app.previewLabel?'开发路线预览 · '+app.previewLabel:'私有历史轨迹'} · 点击收起</Text></Pressable>}
     <View style={styles.bottom}>

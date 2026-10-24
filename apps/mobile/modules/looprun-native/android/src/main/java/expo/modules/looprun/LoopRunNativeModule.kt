@@ -11,13 +11,21 @@ class LoopRunNativeModule : Module() {
   private val context get() = requireNotNull(appContext.reactContext) { "App 尚未准备好" }
   override fun definition() = ModuleDefinition {
     Name("LoopRunNative")
+    OnActivityEntersForeground { LoopRunMapView.resumeAll() }
+    OnActivityEntersBackground { LoopRunMapView.pauseAll() }
+    OnActivityDestroys { LoopRunMapView.destroyAll() }
+    View(LoopRunMapView::class) {
+      Events("onRegionChange", "onCellPress", "onMapStatus")
+      Prop("scene") { view: LoopRunMapView, scene: String -> view.updateScene(scene) }
+      OnViewDestroys { view: LoopRunMapView -> view.dispose() }
+    }
     Function("validateServer") { base: String -> Uploader.validateBase(base) }
     OnCreate { if (!RunService.alive) LocalRuns.get(context).interrupted() }
     Function("configuration") {
       val vault = Vault(context)
-      mapOf("server" to vault.profile("server"), "token" to vault.profile("token"), "installSecret" to vault.installSecret(), "privacy" to vault.get("privacy"), "developerMode" to vault.developerMode())
+      mapOf("server" to vault.profile("server"), "token" to vault.profile("token"), "installSecret" to vault.installSecret(), "privacy" to vault.get("privacy-amap"), "developerMode" to vault.developerMode())
     }
-    AsyncFunction("acceptPrivacy") { Vault(context).put("privacy", "accepted") }
+    AsyncFunction("acceptPrivacy") { Vault(context).put("privacy-amap", "accepted") }
     AsyncFunction("configure") { base: String, token: String ->
       synchronized(Uploader) {
         val normalized = Uploader.validateBase(base); val vault = Vault(context)

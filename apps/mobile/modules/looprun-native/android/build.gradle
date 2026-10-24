@@ -4,5 +4,12 @@ plugins {
 }
 group = 'expo.modules.looprun'
 version = '0.1.0'
-android { namespace 'expo.modules.looprun' }
-dependencies { implementation 'androidx.work:work-runtime-ktx:2.11.2' }
+android {
+  namespace 'expo.modules.looprun'
+  defaultConfig { consumerProguardFiles 'consumer-rules.pro' }
+}
+dependencies {
+  implementation 'androidx.work:work-runtime-ktx:2.11.2'
+  implementation 'com.amap.api:3dmap-location-search:11.3.100_loc11.3.101_sea9.8.1'
+  implementation 'net.jafama:jafama:2.3.2'
+}
