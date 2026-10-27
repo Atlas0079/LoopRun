@@ -4,6 +4,7 @@ import {cellCenter} from './geo.mjs';
 import {simulationPoints} from './road-simulation.mjs';
 import {BOT_PERSONAS} from './bot-personas.mjs';
 import {ReplayBots} from './replay-bots.mjs';
+import {roadPlayback} from './road-playback.mjs';
 
 const clone=value=>JSON.parse(JSON.stringify(value));
 // Same activity operations as the online transport, backed by an isolated on-device world.
@@ -28,7 +29,20 @@ export class LocalDemo {
     return new ReplayBots('',BOT_PERSONAS,this.routes.filter(r=>r.id.startsWith('replay-')),()=>this.changed(),{
       realtime:true,catalog:this.routes,login:persona=>({persona:persona.id}),
       request:(client,path,body)=>this.requestAs(client.playerId,path,body),
+      completeNow:client=>this.completeBot(client),
     });
+  }
+  async completeBot(client){
+    // Replace the partial real-time activity with an explicitly simulated full lap.
+    // Sampling and settlement still use the same operations and game rules.
+    if(client.activity&&client.activity.source!=='simulation'){
+      await this.requestAs(client.playerId,`/runs/${client.activity.id}/cancel`,{});
+      client.activity=null;
+    }
+    if(!client.activity)client.activity=await this.requestAs(client.playerId,'/runs/start',{simulation:true,preset:client.routeId,startPercent:client.startPercent,shareLocation:true});
+    const points=client.activity.route.map((point,i)=>({...point,seq:i+1}));
+    for(let offset=0;offset<points.length;offset+=200)await this.requestAs(client.playerId,`/runs/${client.activity.id}/points`,{points:points.slice(offset,offset+200)});
+    await this.requestAs(client.playerId,`/runs/${client.activity.id}/finish`,{endedAt:points.at(-1).time,pointCount:points.length});
   }
   subscribe(listener){this.listeners.add(listener);return()=>this.listeners.delete(listener);}
   changed(){for(const listener of this.listeners)listener();}
@@ -57,6 +71,7 @@ export class LocalDemo {
       if(body?.action==='start')return this.bots.start();
       if(body?.action==='pause')return this.bots.pause();
       if(body?.action==='run')return this.bots.run(body.playerId,body.preset,body.startPercent);
+      if(body?.action==='fast-forward')return this.bots.fastForward(body.playerId);
       return Promise.reject(new Error('请选择有效的机器人操作'));
     }
     return this.requestAs(null,path,body);
@@ -101,7 +116,8 @@ export class LocalDemo {
           activity=this.game.startActivity(world,playerId,now,{simulation:Boolean(body?.simulation),shareLocation:Boolean(body?.shareLocation)});
           data.samples[activity.id]=[];
           if(route){
-            const points=simulationPoints(route,now).map(p=>({...p,time:Math.round(p.time)}));
+            const geometry=playerId!==data.playerId?{...route,points:roadPlayback(route,body.startPercent||0).points}:route;
+            const points=simulationPoints(geometry,now).map(p=>({...p,time:Math.round(p.time)}));
             Object.assign(activity,{simulationRoute:points,startedAt:points[0].time,roadRouteName:route.name});
           }
         }

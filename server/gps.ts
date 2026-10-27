@@ -46,8 +46,8 @@ app.setErrorHandler((error:any,_request,reply)=>{
   if(!known)app.log.error({name:error.name,code:error.code},'GPS request failed');
   reply.code(error.statusCode||(known?400:500)).send({error:error.validation?'请求格式不正确，请检查当前内测版本。':known?error.message:'服务暂不可用，请稍后重试。',code:error.validation?'INVALID_REQUEST':error.code});
 });
-app.get('/api/health',async()=>({ok:true,mode:'gps',development,version:'0.6.0'}));
-app.get('/api/config',async()=>({sandbox:false,development,rules:RULES,center:DEFAULT_CENTER,version:'0.6.0',...(development?{routes:roadRoutes.map(({id,name,description,distance,points})=>({id,name,description,distance,points}))}:{})}));
+app.get('/api/health',async()=>({ok:true,mode:'gps',development,version:'0.6.1'}));
+app.get('/api/config',async()=>({sandbox:false,development,rules:RULES,center:DEFAULT_CENTER,version:'0.6.1',...(development?{routes:roadRoutes.map(({id,name,description,distance,points})=>({id,name,description,distance,points}))}:{})}));
 app.post('/api/auth/beta',{config:{rateLimit:{max:30,timeWindow:'1 minute'}},schema:{body:object({installSecret:{type:'string',pattern:'^[A-Za-z0-9_-]{43,128}$'},accessCode:{type:'string',maxLength:128},name:{type:'string',minLength:1,maxLength:12}},['installSecret'])}},async(request,reply)=>{
   const body=request.body as {installSecret:string;accessCode?:string;name?:string};
   const playerId=`app_${hash(body.installSecret).slice(0,40)}`;

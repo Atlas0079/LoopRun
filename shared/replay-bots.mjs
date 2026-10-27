@@ -6,7 +6,27 @@ export class ReplayBots {
     this.options=options;this.enabled=false;this.clients=this.makeClients(0);this.pending=Promise.resolve();
   }
   makeClients(rounds){return this.personas.map((persona,i)=>({persona,startPercent:i*20,phase:'未开始',completed:0,plan:Array.from({length:rounds},(_,round)=>this.routes[(i+round)%this.routes.length]),nextAt:Date.now()+i*1800}));}
-  status(){return {enabled:this.enabled,players:this.clients.map(c=>({id:c.persona.id,playerId:c.playerId,name:c.persona.name,phase:c.phase,route:c.routeName,routeId:c.routeId,startPercent:c.startPercent||0,progress:c.progress||0,completed:c.completed,total:c.plan?.length||0,error:c.error||null}))};}
+  status(){return {enabled:this.enabled,players:this.clients.map(c=>({id:c.persona.id,playerId:c.playerId,name:c.persona.name,phase:c.phase,route:c.routeName,routeId:c.routeId,startPercent:c.startPercent||0,progress:c.progress||0,completed:c.completed,total:c.plan?.length||0,error:c.error||null,...(this.options.completeNow?{canFastForward:Boolean(c.activity||c.fastRequested)}:{})}))};}
+  async fastForward(playerId){
+    if(!this.options.completeNow)throw new Error('快进仅用于本地演示。');
+    if(this.pausing||this.fastForwarding)throw new Error('机器人正在处理操作，请稍后重试。');
+    this.fastForwarding=true;
+    const work=this.pending.then(async()=>{
+      const c=this.clients.find(c=>c.persona.id===playerId);
+      if(!c||(!c.activity&&!c.fastRequested))throw new Error('请选择正在跑步的机器人。');
+      c.fastRequested=true;c.phase='正在快进';this.changed();
+      try{
+        await this.options.completeNow(c);
+        c.activity=null;c.fastRequested=false;c.completed++;c.plan=c.plan.slice(0,c.completed);
+        c.progress=100;c.phase='本圈完成（快进）';c.error=null;
+        if(this.clients.every(p=>p.completed>=(p.plan?.length||0))){this.enabled=false;clearInterval(this.timer);}
+      }catch(error){c.error=error.message;c.phase='快进失败，请重试';throw error;}
+      finally{this.changed();}
+      return this.status();
+    });
+    this.pending=work.catch(()=>{});
+    try{return await work;}finally{this.fastForwarding=false;}
+  }
   async request(client,path,body){
     if(this.options.request)return this.options.request(client,path,body);
     const response=await fetch(`${this.baseUrl}/api${path}`,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(client.token?{Authorization:`Bearer ${client.token}`}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(8000)});
@@ -33,7 +53,7 @@ export class ReplayBots {
   activate(){
     this.enabled=true;
     this.timer=setInterval(()=>{
-      if(this.ticking)return;
+      if(this.ticking||this.fastForwarding)return;
       this.ticking=true;
       this.pending=this.tick().catch(error=>{this.enabled=false;clearInterval(this.timer);for(const c of this.clients)c.error=error.message;this.changed();}).finally(()=>{this.ticking=false;});
     },1000);
@@ -49,6 +69,7 @@ export class ReplayBots {
     await this.pending;
     for(const c of this.clients){
       if(c.activity)try{await this.request(c,`/runs/${c.activity.id}/cancel`,{});c.activity=null;c.error=null;}catch(error){c.error=error.message;}
+      if(!c.activity)c.fastRequested=false;
       c.phase=c.activity?'暂停失败，请重试':'已暂停';
     }
     this.changed();return this.status();
@@ -57,8 +78,9 @@ export class ReplayBots {
     if(!this.enabled)return;
     const before=JSON.stringify(this.status());
     for(const c of this.clients){
-      if(!this.enabled)break;
+      if(!this.enabled||this.fastForwarding)break;
       try{
+        if(c.fastRequested)continue;
         if(c.completed>=(c.plan?.length||0))continue;
         if(c.retryAt&&Date.now()<c.retryAt)continue;
         if(!c.token){const login=await this.request(c,this.options.login?'/auth/beta':'/auth/development',this.options.login?this.options.login(c.persona):{persona:c.persona.id});c.token=login.token;c.playerId=login.playerId;}
