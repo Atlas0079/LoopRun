@@ -1,6 +1,7 @@
 import React,{createContext,useCallback,useContext,useEffect,useRef,useState} from 'react';
 import {AppState,PermissionsAndroid,Platform} from 'react-native';
 import Native,{type Snapshot,type Configuration,type Report} from '../../modules/looprun-native';
+import {configuration,getLocalDemo} from './localDemo';
 import {advanceSimulation,createSimulation,type Simulation,type SimulatedActivity} from './simulation';
 
 export type Cell={key:string;owner:string|null;fortification:number};
@@ -11,7 +12,7 @@ export type Bot={id:string;playerId?:string;name:string;phase:string;route?:stri
 export type Bots={enabled:boolean;players:Bot[]};
 export type ServerState={now:number;player:Member&{damage:number;fortifiedCells:number;runCount:number;totalDistance:number;center?:{lat:number;lng:number};removedReason?:string};pool:null|{id:string;name:string;cells:Cell[];members:Member[]};activities:(Report&{id:string;routeName?:string})[];activeActivity?:(SimulatedActivity&{source:'simulation'})|{id:string;source:'gps'}|null;map:{limited:boolean};developerBots?:Bots};
 export type Connection=Configuration;
-type ContextValue={connection:Connection;developerMode:boolean;routes:DeveloperRoute[];state:ServerState|null;snapshot:Snapshot;privacy:boolean;busy:boolean;error:string;mode:'mine'|'pool';historyRoute:GeoPoint[]|null;previewLabel:string|null;setHistoryRoute:(p:GeoPoint[]|null)=>void;previewRoute:(route:DeveloperRoute)=>void;setMode:(m:'mine'|'pool')=>void;setBbox:(s:string)=>void;acceptPrivacy:()=>Promise<void>;connect:(base:string,code:string,name:string)=>Promise<void>;setDeveloperMode:(enabled:boolean)=>Promise<Connection>;request:<T>(path:string,body?:unknown)=>Promise<T>;start:(share:boolean)=>Promise<void>;startSimulation:(preset:string)=>Promise<void>;controlBots:(action:'start'|'pause'|'run',playerId?:string,preset?:string,startPercent?:number)=>Promise<void>;stop:()=>Promise<void>;discard:()=>Promise<void>;sync:()=>Promise<void>;perform:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>};
+type ContextValue={connection:Connection;developerMode:boolean;demoMode:boolean;setDemoMode:(enabled:boolean)=>Promise<void>;resetDemo:()=>Promise<void>;routes:DeveloperRoute[];state:ServerState|null;snapshot:Snapshot;privacy:boolean;busy:boolean;error:string;mode:'mine'|'pool';historyRoute:GeoPoint[]|null;previewLabel:string|null;setHistoryRoute:(p:GeoPoint[]|null)=>void;previewRoute:(route:DeveloperRoute)=>void;setMode:(m:'mine'|'pool')=>void;setBbox:(s:string)=>void;acceptPrivacy:()=>Promise<void>;connect:(base:string,code:string,name:string)=>Promise<void>;setDeveloperMode:(enabled:boolean)=>Promise<Connection>;request:<T>(path:string,body?:unknown)=>Promise<T>;start:(share:boolean)=>Promise<void>;startSimulation:(preset:string)=>Promise<void>;controlBots:(action:'start'|'pause'|'run',playerId?:string,preset?:string,startPercent?:number)=>Promise<void>;stop:()=>Promise<void>;discard:()=>Promise<void>;sync:()=>Promise<void>;perform:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>};
 const Context=createContext<ContextValue|null>(null);
 async function fetchJson<T>(base:string,path:string,body?:unknown,token?:string):Promise<T>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
@@ -21,10 +22,13 @@ async function fetchJson<T>(base:string,path:string,body?:unknown,token?:string)
   }catch(error){if(error instanceof Error&&error.name==='AbortError')throw new Error('连接服务器超时，请检查地址和网络');throw error;}
   finally{clearTimeout(timer);}
 }
+function send<T>(connection:Connection,path:string,body?:unknown):Promise<T>{
+  return connection.demoMode?getLocalDemo().request(path,body) as Promise<T>:fetchJson<T>(connection.server,path,body,connection.token);
+}
 export function AppProvider({children}:{children:React.ReactNode}){
-  const [connection,setConnection]=useState<Connection>(()=>Native.configuration()),[state,setState]=useState<ServerState|null>(null),[nativeSnapshot,setNativeSnapshot]=useState<Snapshot>({}),[privacy,setPrivacy]=useState(()=>connection.privacy==='accepted'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[mode,setMode]=useState<'mine'|'pool'>('pool'),[bbox,setBbox]=useState(''),[historyRoute,storeHistoryRoute]=useState<GeoPoint[]|null>(null),[previewLabel,setPreviewLabel]=useState<string|null>(null),[routes,setRoutes]=useState<DeveloperRoute[]>([]),[simulation,storeSimulation]=useState<Simulation|null>(null),[simulationReport,setSimulationReport]=useState<Snapshot>({});
+  const [connection,setConnection]=useState<Connection>(()=>configuration()),[state,setState]=useState<ServerState|null>(null),[nativeSnapshot,setNativeSnapshot]=useState<Snapshot>({}),[privacy,setPrivacy]=useState(()=>connection.privacy==='accepted'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[mode,setMode]=useState<'mine'|'pool'>('pool'),[bbox,setBbox]=useState(''),[historyRoute,storeHistoryRoute]=useState<GeoPoint[]|null>(null),[previewLabel,setPreviewLabel]=useState<string|null>(null),[routes,setRoutes]=useState<DeveloperRoute[]>([]),[simulation,storeSimulation]=useState<Simulation|null>(null),[simulationReport,setSimulationReport]=useState<Snapshot>({});
   const connectionRef=useRef(connection),queryRef=useRef({mode,bbox}),refreshing=useRef<Connection|null>(null),simulationRef=useRef<Simulation|null>(null),working=useRef(false);
-  const developerMode=connection.developerMode;
+  const developerMode=connection.developerMode,demoMode=connection.demoMode;
   const snapshot:Snapshot=simulation?{run:simulation}:nativeSnapshot.run?nativeSnapshot:
     (simulationReport.report?.finishedAt||0)>(nativeSnapshot.report?.finishedAt||0)?simulationReport:nativeSnapshot;
   function updateSimulation(value:Simulation|null){simulationRef.current=value;storeSimulation(value);}
@@ -32,14 +36,14 @@ export function AppProvider({children}:{children:React.ReactNode}){
   function previewRoute(route:DeveloperRoute){if(!connectionRef.current.developerMode)throw new Error('请先开启开发者模式');setPreviewLabel(route.name);storeHistoryRoute(route.points.map(p=>({...p,time:0,accuracy:5})));}
   useEffect(()=>{queryRef.current={mode,bbox};},[mode,bbox]);
   const request=useCallback(<T,>(path:string,body?:unknown)=>{
-    const current=connectionRef.current;if(!current.server||!current.token)throw new Error('请先连接当前环境的服务器');return fetchJson<T>(current.server,path,body,current.token);
+    const current=connectionRef.current;if(!current.server||!current.token)throw new Error('请先连接当前环境的服务器');return send<T>(current,path,body);
   },[]);
-  const local=useCallback(async()=>{const current=connectionRef.current;const value=JSON.parse(await Native.snapshot());if(connectionRef.current===current)setNativeSnapshot(value);},[]);
+  const local=useCallback(async()=>{const current=connectionRef.current;if(current.demoMode){setNativeSnapshot({});return;}const value=JSON.parse(await Native.snapshot());if(connectionRef.current===current)setNativeSnapshot(value);},[]);
   const refresh=useCallback(async()=>{
     const current=connectionRef.current;
     if(!current.token||refreshing.current===current)return;refreshing.current=current;
     try{
-      const q=queryRef.current,next=await fetchJson<ServerState>(current.server,'/state?mode='+q.mode+(q.bbox?'&bbox='+encodeURIComponent(q.bbox):''),undefined,current.token);
+      const q=queryRef.current,next=await send<ServerState>(current,'/state?mode='+q.mode+(q.bbox?'&bbox='+encodeURIComponent(q.bbox):''));
       if(connectionRef.current!==current)return;
       setState(next);setError('');
       if(current.developerMode&&next.activeActivity?.source==='simulation'&&simulationRef.current?.id!==next.activeActivity.id){
@@ -51,7 +55,7 @@ export function AppProvider({children}:{children:React.ReactNode}){
   useEffect(()=>{void local().catch(()=>{});},[local,developerMode]);
   useEffect(()=>{
     const current=connection;if(!current.token)return;
-    void refresh();void fetchJson<{development:boolean;routes?:DeveloperRoute[]}>(current.server,'/config').then(c=>{if(connectionRef.current!==current)return;if(c.development!==current.developerMode)throw new Error('服务器环境与开发者开关不一致，请重新连接');setRoutes(current.developerMode?c.routes||[]:[]);}).catch(e=>{if(connectionRef.current===current)setError(e.message);});
+    void refresh();void send<{development:boolean;routes?:DeveloperRoute[]}>(current,'/config').then(c=>{if(connectionRef.current!==current)return;if(c.development!==current.developerMode)throw new Error('服务器环境与开发者开关不一致，请重新连接');setRoutes(current.developerMode?c.routes||[]:[]);}).catch(e=>{if(connectionRef.current===current)setError(e.message);});
   },[connection,refresh]);
   useEffect(()=>{const timer=setTimeout(()=>{void refresh();},450);return()=>clearTimeout(timer);},[bbox,mode,refresh]);
   useEffect(()=>{
@@ -61,18 +65,36 @@ export function AppProvider({children}:{children:React.ReactNode}){
     return()=>{clearInterval(timer);clearInterval(poll);listener.remove();};
   },[local,refresh]);
   useEffect(()=>{
-    if(!connection.token)return;
+    if(!connection.token||connection.demoMode)return;
     const Ctor=WebSocket as unknown as new(url:string,protocols:string[]|null,options:{headers:Record<string,string>})=>WebSocket;
     const socket=new Ctor(connection.server.replace(/^http/,'ws')+'/api/events',null,{headers:{Authorization:'Bearer '+connection.token}});
     socket.onmessage=()=>{void refresh();};return()=>socket.close();
-  },[connection.server,connection.token,refresh]);
+  },[connection.server,connection.token,connection.demoMode,refresh]);
   useEffect(()=>{
     if(!developerMode)return;
     const timer=setInterval(()=>{const current=simulationRef.current;if(current){const next=advanceSimulation(current,Date.now());if(next!==current){simulationRef.current=next;storeSimulation(next);}}},250);
     return()=>clearInterval(timer);
   },[developerMode]);
+  useEffect(()=>{
+    if(!demoMode)return;
+    const client=getLocalDemo(),unsubscribe=client.subscribe(()=>{void refresh();});
+    const listener=AppState.addEventListener('change',status=>{if(status!=='active')void client.pause().catch(()=>{});});
+    return()=>{unsubscribe();listener.remove();void client.pause().catch(()=>{});};
+  },[demoMode,refresh]);
+  async function setDemoMode(enabled:boolean){
+    if(connectionRef.current.demoMode===enabled)return;
+    if(simulationRef.current||JSON.parse(await Native.snapshot()).run)throw new Error('请先结束或放弃当前跑步，再切换本地演示');
+    if(connectionRef.current.demoMode)await getLocalDemo().pause();
+    await Native.setDemoMode(enabled);
+    const next=configuration();connectionRef.current=next;setConnection(next);setState(null);setNativeSnapshot({});setSimulationReport({});updateSimulation(null);setHistoryRoute(null);setRoutes([]);setMode('pool');setBbox('');await local();await refresh();
+  }
+  async function resetDemo(){
+    if(!connectionRef.current.demoMode)throw new Error('请先进入本地演示');
+    await getLocalDemo().reset();updateSimulation(null);setSimulationReport({});setHistoryRoute(null);setBbox('');await refresh();
+  }
   async function perform(action:()=>Promise<void>){if(working.current)return;working.current=true;setBusy(true);setError('');try{await action();}catch(e){setError(e instanceof Error?e.message:'操作失败，数据仍保存在本机');}finally{await local().catch(()=>{});working.current=false;setBusy(false);}}
   async function connect(input:string,code:string,name:string){
+    if(connectionRef.current.demoMode)throw new Error('本地演示无需连接服务器');
     const base=Native.validateServer(input),current=connectionRef.current;
     if((snapshot.run||state?.activeActivity)&&current.server!==base)throw new Error('请先处理未完成的活动，再切换服务器');
     const health=await fetchJson<{mode:string;development:boolean}>(base,'/health');
@@ -81,13 +103,14 @@ export function AppProvider({children}:{children:React.ReactNode}){
     await Native.configure(base,result.token);const next=Native.configuration();connectionRef.current=next;setConnection(next);setState(null);await refresh();
   }
   async function setDeveloperMode(enabled:boolean){
-    const current=connectionRef.current;if(current.developerMode===enabled)return current;
+    const current=connectionRef.current;if(current.demoMode)throw new Error('请先退出本地演示，再切换联机开发模式');if(current.developerMode===enabled)return current;
     if(snapshot.run||JSON.parse(await Native.snapshot()).run)throw new Error('请先结束、上传或放弃当前活动，再切换开发者模式');
     if(current.token){const remote=await request<ServerState>('/state');if(remote.activeActivity)throw new Error('服务器仍有未完成的活动，请先处理后再切换模式');}
     await Native.setDeveloperMode(enabled);
     const next=Native.configuration();connectionRef.current=next;setConnection(next);setState(null);setNativeSnapshot({});setSimulationReport({});updateSimulation(null);setHistoryRoute(null);setRoutes([]);setMode('pool');setBbox('');await local();await refresh();return next;
   }
   async function start(share:boolean){
+    if(connectionRef.current.demoMode)throw new Error('真实 GPS 跑步请先退出本地演示');
     if(simulationRef.current||JSON.parse(await Native.snapshot()).run||state?.activeActivity)throw new Error('请先处理当前活动');
     if(!privacy)throw new Error('请先阅读并确认地图和定位用途');
     const permissions=[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION];
@@ -123,10 +146,10 @@ export function AppProvider({children}:{children:React.ReactNode}){
       updateSimulation(null);setSimulationReport({report,reportId:current.id});await refresh();
     }catch(e){const latest=simulationRef.current;if(latest)updateSimulation({...latest,status:'pending',error:e instanceof Error?e.message:'模拟上传失败，请重试'});throw e;}
   }
-  async function sync(){if(simulationRef.current){await syncSimulation();return;}try{setNativeSnapshot(JSON.parse(await Native.sync()));}finally{await local();await refresh();}}
-  async function stop(){if(simulationRef.current){await syncSimulation();return;}await Native.stop();await local();await sync();}
-  async function discard(){const run=simulationRef.current;if(run){await request('/runs/'+run.id+'/cancel',{});updateSimulation(null);setSimulationReport({});await refresh();return;}await Native.discard();await local();await sync();}
+  async function sync(){if(simulationRef.current){await syncSimulation();return;}if(connectionRef.current.demoMode){await refresh();return;}try{setNativeSnapshot(JSON.parse(await Native.sync()));}finally{await local();await refresh();}}
+  async function stop(){if(simulationRef.current){await syncSimulation();return;}if(connectionRef.current.demoMode)return;await Native.stop();await local();await sync();}
+  async function discard(){const run=simulationRef.current;if(run){await request('/runs/'+run.id+'/cancel',{});updateSimulation(null);setSimulationReport({});await refresh();return;}if(connectionRef.current.demoMode)return;await Native.discard();await local();await sync();}
   async function acceptPrivacy(){await Native.acceptPrivacy();setPrivacy(true);}
-  return <Context.Provider value={{connection,developerMode,routes,state,snapshot,privacy,busy,error,mode,historyRoute,previewLabel,setHistoryRoute,previewRoute,setMode,setBbox,acceptPrivacy,connect,setDeveloperMode,request,start,startSimulation,controlBots,stop,discard,sync,perform,refresh}}>{children}</Context.Provider>;
+  return <Context.Provider value={{connection,developerMode,demoMode,setDemoMode,resetDemo,routes,state,snapshot,privacy,busy,error,mode,historyRoute,previewLabel,setHistoryRoute,previewRoute,setMode,setBbox,acceptPrivacy,connect,setDeveloperMode,request,start,startSimulation,controlBots,stop,discard,sync,perform,refresh}}>{children}</Context.Provider>;
 }
 export function useApp(){const value=useContext(Context);if(!value)throw new Error('缺少 App 状态');return value;}

@@ -23,7 +23,16 @@ class LoopRunNativeModule : Module() {
     OnCreate { if (!RunService.alive) LocalRuns.get(context).interrupted() }
     Function("configuration") {
       val vault = Vault(context)
-      mapOf("server" to vault.profile("server"), "token" to vault.profile("token"), "installSecret" to vault.installSecret(), "privacy" to vault.get("privacy-amap"), "developerMode" to vault.developerMode())
+      mapOf("server" to vault.profile("server"), "token" to vault.profile("token"), "installSecret" to vault.installSecret(), "privacy" to vault.get("privacy-amap"), "developerMode" to vault.developerMode(), "demoMode" to (vault.get("demo-mode") == "enabled"))
+    }
+    Function("uniqueId") { java.util.UUID.randomUUID().toString() }
+    Function("readDemoState") { DemoStore.read(context) }
+    AsyncFunction("writeDemoState") { value: String -> DemoStore.write(context, value) }
+    AsyncFunction("setDemoMode") { enabled: Boolean ->
+      synchronized(Uploader) {
+        check(LocalRuns.get(context).current() == null) { "请先处理本机真实跑步，再切换本地演示" }
+        Vault(context).put("demo-mode", if (enabled) "enabled" else "disabled")
+      }
     }
     AsyncFunction("acceptPrivacy") { Vault(context).put("privacy-amap", "accepted") }
     AsyncFunction("configure") { base: String, token: String ->

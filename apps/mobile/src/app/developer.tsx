@@ -15,7 +15,7 @@ export default function Developer(){
   useEffect(()=>{if(!app.developerMode)router.dismissTo('/');},[app.developerMode]);
   if(!app.developerMode)return null;
   return <SafeAreaView style={styles.screen}><View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="返回地图" onPress={()=>router.dismissTo('/')} style={styles.back}><Text style={styles.backText}>返回地图</Text></Pressable><Text style={styles.heading}>机器人设置</Text></View><ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-    <ErrorNotice message={app.error}/><Text style={styles.text}>机器人作为普通用户登录，按真实时间沿道路跑步，逐步上传采样并公开大致位置。只调用普通用户接口，不直接设置领地或匹配池。</Text>
+    <ErrorNotice message={app.error}/><Text style={styles.text}>{app.demoMode?'本机机器人按真实时间沿道路跑步，使用相同规则结算。离开应用或重启后暂停，可再次启动。':'机器人作为普通用户登录，按真实时间沿道路跑步，逐步上传采样并公开大致位置。只调用普通用户接口，不直接设置领地或匹配池。'}</Text>
     {!app.connection.token||!app.state?<Button title="连接测试账户" onPress={()=>router.push('/settings')}/>:<>
       <RoutePicker routes={app.routes} value={preset} onChange={setPreset}/>
       <Text style={styles.heading}>起跑位置</Text><View style={[styles.row,{flexWrap:'wrap'}]}>{[0,25,50,75].map(p=><Pressable key={p} accessibilityRole="radio" accessibilityLabel={'路线 '+p+'% 位置'} accessibilityState={{checked:startPercent===p}} onPress={()=>setPercent(String(p))} style={styles.link}><Text style={styles.subheading}>{startPercent===p?'● ':'○ '}{p===0?'路线起点':p+'% 位置'}</Text></Pressable>)}</View>
